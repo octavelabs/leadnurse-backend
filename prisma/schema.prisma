@@ -1,0 +1,661 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum FacilityType {
+  HOSPITAL
+  CARE_HOME
+  CLINIC
+  GP_SURGERY
+  COMMUNITY_HEALTH
+  OTHER
+}
+
+enum ShiftType {
+  DAY
+  NIGHT
+  LONG_DAY
+  ON_CALL
+}
+
+enum ShiftStatus {
+  OPEN
+  PARTIALLY_FILLED
+  FILLED
+  COMPLETED
+  CANCELLED
+}
+
+enum AssignmentStatus {
+  PENDING
+  CONFIRMED
+  DECLINED
+  CANCELLED
+  COMPLETED
+}
+
+enum AttendanceStatus {
+  ON_TIME
+  LATE
+  ABSENT
+  LEFT_EARLY
+}
+
+enum PayrollStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  PAID
+}
+
+enum ComplianceType {
+  DBS
+  NMC_PIN
+  RIGHT_TO_WORK
+  CARE_CERTIFICATE
+  MANDATORY_TRAINING
+  FIRST_AID
+  MANUAL_HANDLING
+  INFECTION_CONTROL
+  SAFEGUARDING
+  OTHER
+}
+
+enum ComplianceStatus {
+  VALID
+  EXPIRING_SOON
+  EXPIRED
+  NOT_SUBMITTED
+  UNDER_REVIEW
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  ASSIGN
+  UNASSIGN
+  APPROVE
+  REJECT
+  CHECKIN
+  CHECKOUT
+}
+
+enum DocumentSignatureStatus {
+  PENDING
+  SIGNED
+  DECLINED
+}
+
+enum SignoffStatus {
+  PENDING
+  SIGNED
+  DECLINED
+}
+
+enum SlideType {
+  TITLE
+  CONTENT
+  BULLET_LIST
+  IMAGE
+  QUOTE
+}
+
+enum ReferenceRelationship {
+  LINE_MANAGER
+  SUPERVISOR
+  COLLEAGUE
+  HR_CONTACT
+  OTHER
+}
+
+enum ReferenceStatus {
+  PENDING
+  SENT
+  COMPLETED
+  DECLINED
+  EXPIRED
+}
+
+enum NotificationType {
+  SHIFT_ASSIGNED
+  SHIFT_CANCELLED
+  SHIFT_REMINDER
+  COMPLIANCE_EXPIRING
+  COMPLIANCE_EXPIRED
+  PAYROLL_READY
+  SYSTEM
+}
+
+// ─── LMS Models ──────────────────────────────────────────────────────────────
+
+model User {
+  id           String              @id @default(cuid())
+  name         String
+  email        String              @unique
+  password     String
+  role         Role                @default(EMPLOYEE)
+  phone        String?
+  address      String?
+  city         String?
+  postcode     String?
+  bio          String?             @db.Text
+  avatarUrl    String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  enrollments  Enrollment[]
+  progress     Progress[]
+  certificates Certificate[]
+  attempts     AssessmentAttempt[]
+
+  // Workforce relations
+  workerRoles             WorkerRole[]
+  shiftAssignments        ShiftAssignment[]
+  availability            WorkerAvailability[]
+  attendance              Attendance[]              @relation("AttendanceWorker")
+  payrollEntries          PayrollEntry[]
+  compliance              WorkerCompliance[]
+  auditLogs               AuditLog[]
+  notifications           Notification[]
+  generatedPayrollReports PayrollReport[]           @relation("PayrollGeneratedBy")
+  references              Reference[]               @relation("WorkerReferences")
+  addedReferences         Reference[]               @relation("AdminAddedReferences")
+  uploadedDocuments       SignableDocument[]         @relation("UploadedDocuments")
+  documentSignatures      DocumentSignature[]        @relation("DocumentSignatures")
+  timesheetSignoffRequests TimesheetSignoff[]        @relation("TimesheetSignoffRequests")
+  chapterQuizAttempts     ChapterQuizAttempt[]       @relation("ChapterQuizAttempts")
+}
+
+model Course {
+  id          String        @id @default(cuid())
+  title       String
+  description String        @db.Text
+  isPublished Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  lessons     Lesson[]
+  enrollments Enrollment[]
+  assessment  Assessment?
+  certificates Certificate[]
+  chapters    Chapter[]
+}
+
+model Lesson {
+  id              String    @id @default(cuid())
+  title           String
+  content         String    @db.Text
+  order           Int
+  courseId        String
+  chapterId       String?
+  slideType       SlideType @default(CONTENT)
+  backgroundTheme String    @default("white")
+  imageUrl        String?
+  bulletPoints    String[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  course          Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  chapter         Chapter?  @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  progress        Progress[]
+
+  @@index([courseId, order])
+  @@index([chapterId])
+}
+
+model Enrollment {
+  id          String    @id @default(cuid())
+  userId      String
+  courseId    String
+  enrolledAt  DateTime  @default(now())
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+}
+
+model Progress {
+  id          String    @id @default(cuid())
+  userId      String
+  lessonId    String
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+}
+
+model Assessment {
+  id          String              @id @default(cuid())
+  courseId    String              @unique
+  passScore   Int                 @default(70)
+  maxAttempts Int                 @default(3)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  course      Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  questions   Question[]
+  attempts    AssessmentAttempt[]
+}
+
+model Question {
+  id            String     @id @default(cuid())
+  assessmentId  String
+  question      String
+  options       String[]
+  correctAnswer Int
+  order         Int        @default(0)
+  assessment    Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+}
+
+model AssessmentAttempt {
+  id           String     @id @default(cuid())
+  userId       String
+  assessmentId String
+  score        Float
+  passed       Boolean
+  answers      Int[]
+  attemptedAt  DateTime   @default(now())
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, assessmentId])
+}
+
+model Certificate {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String
+  issuedAt  DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId])
+}
+
+// ─── Workforce Models ─────────────────────────────────────────────────────────
+
+model Facility {
+  id           String       @id @default(cuid())
+  name         String
+  type         FacilityType @default(OTHER)
+  address      String
+  city         String
+  postcode     String
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  shifts       Shift[]
+}
+
+model HealthcareRole {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  workerRoles WorkerRole[]
+  shifts      Shift[]
+}
+
+model WorkerRole {
+  id        String         @id @default(cuid())
+  userId    String
+  roleId    String
+  isPrimary Boolean        @default(false)
+  createdAt DateTime       @default(now())
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      HealthcareRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+}
+
+model Shift {
+  id                       String           @id @default(cuid())
+  title                    String
+  facilityId               String
+  roleId                   String
+  date                     DateTime         @db.Date
+  startTime                DateTime
+  endTime                  DateTime
+  shiftType                ShiftType        @default(DAY)
+  hourlyRate               Float
+  requiredWorkers          Int              @default(1)
+  status                   ShiftStatus      @default(OPEN)
+  notes                    String?          @db.Text
+  requiresDBS              Boolean          @default(false)
+  requiresRightToWork      Boolean          @default(false)
+  requiresCareCert         Boolean          @default(false)
+  requiresNMC              Boolean          @default(false)
+  requiresMandatoryTraining Boolean         @default(false)
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  facility                 Facility         @relation(fields: [facilityId], references: [id])
+  role                     HealthcareRole   @relation(fields: [roleId], references: [id])
+  assignments              ShiftAssignment[]
+  attendance               Attendance[]
+
+  @@index([date])
+  @@index([facilityId])
+  @@index([status])
+}
+
+model ShiftAssignment {
+  id         String           @id @default(cuid())
+  shiftId    String
+  userId     String
+  status     AssignmentStatus @default(PENDING)
+  assignedAt DateTime         @default(now())
+  confirmedAt DateTime?
+  notes      String?
+  shift      Shift            @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftId, userId])
+  @@index([userId])
+  @@index([shiftId])
+}
+
+model WorkerAvailability {
+  id        String   @id @default(cuid())
+  userId    String
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayOfWeek])
+  @@index([userId])
+}
+
+model Attendance {
+  id             String           @id @default(cuid())
+  shiftId        String
+  userId         String
+  checkInTime    DateTime?
+  checkOutTime   DateTime?
+  status         AttendanceStatus @default(ON_TIME)
+  hoursWorked    Float?
+  overtimeHours  Float?           @default(0)
+  notes          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  shift          Shift            @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user           User             @relation("AttendanceWorker", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftId, userId])
+  @@index([userId])
+  @@index([shiftId])
+  signoff       TimesheetSignoff?
+}
+
+model PayrollReport {
+  id            String        @id @default(cuid())
+  periodStart   DateTime      @db.Date
+  periodEnd     DateTime      @db.Date
+  status        PayrollStatus @default(DRAFT)
+  totalAmount   Float         @default(0)
+  generatedById String
+  notes         String?       @db.Text
+  approvedAt    DateTime?
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  generatedBy   User          @relation("PayrollGeneratedBy", fields: [generatedById], references: [id])
+  entries       PayrollEntry[]
+
+  @@index([periodStart, periodEnd])
+  @@index([status])
+}
+
+model PayrollEntry {
+  id              String        @id @default(cuid())
+  payrollReportId String
+  userId          String
+  regularHours    Float         @default(0)
+  overtimeHours   Float         @default(0)
+  hourlyRate      Float
+  regularPay      Float         @default(0)
+  overtimePay     Float         @default(0)
+  totalPay        Float         @default(0)
+  shiftsWorked    Int           @default(0)
+  createdAt       DateTime      @default(now())
+  payrollReport   PayrollReport @relation(fields: [payrollReportId], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([payrollReportId, userId])
+  @@index([userId])
+}
+
+model WorkerCompliance {
+  id             String           @id @default(cuid())
+  userId         String
+  type           ComplianceType
+  status         ComplianceStatus @default(NOT_SUBMITTED)
+  documentNumber String?
+  issueDate      DateTime?        @db.Date
+  expiryDate     DateTime?        @db.Date
+  documentUrl    String?
+  notes          String?
+  verifiedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@index([status])
+  @@index([expiryDate])
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String?
+  action     AuditAction
+  entity     String
+  entityId   String?
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime    @default(now())
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  data      Json?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+model Reference {
+  id                  String                @id @default(cuid())
+  workerId            String
+  addedById           String
+  refereeName         String
+  refereeEmail        String
+  refereeJobTitle     String?
+  refereeOrganisation String?
+  relationship        ReferenceRelationship @default(OTHER)
+  employmentStart     DateTime?             @db.Date
+  employmentEnd       DateTime?             @db.Date
+  status              ReferenceStatus       @default(PENDING)
+  token               String?               @unique
+  tokenExpiresAt      DateTime?
+  requestedAt         DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  worker              User                  @relation("WorkerReferences", fields: [workerId], references: [id], onDelete: Cascade)
+  addedBy             User                  @relation("AdminAddedReferences", fields: [addedById], references: [id])
+  response            ReferenceResponse?
+
+  @@index([workerId])
+  @@index([status])
+  @@index([token])
+}
+
+model ReferenceResponse {
+  id                   String    @id @default(cuid())
+  referenceId          String    @unique
+  jobTitleDuringTenure String?
+  reliability          Int
+  timekeeping          Int
+  teamwork             Int
+  communication        Int
+  overallPerformance   Int
+  wouldRehire          Boolean
+  reasonForLeaving     String?   @db.Text
+  additionalComments   String?   @db.Text
+  declarationSigned    Boolean   @default(false)
+  submittedAt          DateTime  @default(now())
+  reference            Reference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+}
+
+// ─── Feature 1: Signable Documents ───────────────────────────────────────────
+
+model SignableDocument {
+  id           String              @id @default(cuid())
+  title        String
+  description  String?             @db.Text
+  documentUrl  String
+  uploadedById String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  uploadedBy   User                @relation("UploadedDocuments", fields: [uploadedById], references: [id])
+  signatures   DocumentSignature[]
+
+  @@index([uploadedById])
+}
+
+model DocumentSignature {
+  id            String                  @id @default(cuid())
+  documentId    String
+  userId        String
+  status        DocumentSignatureStatus @default(PENDING)
+  signatureText String?
+  signedAt      DateTime?
+  assignedAt    DateTime                @default(now())
+  document      SignableDocument        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user          User                    @relation("DocumentSignatures", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId])
+  @@index([userId])
+  @@index([status])
+}
+
+// ─── Feature 2: Timesheet Sign-off ───────────────────────────────────────────
+
+model TimesheetSignoff {
+  id              String       @id @default(cuid())
+  attendanceId    String       @unique
+  requestedById   String
+  supervisorName  String?
+  supervisorEmail String?
+  supervisorRole  String?
+  status          SignoffStatus @default(PENDING)
+  token           String?      @unique
+  tokenExpiresAt  DateTime?
+  rating          Int?
+  feedback        String?      @db.Text
+  signedAt        DateTime?
+  requestedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  attendance      Attendance   @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  requestedBy     User         @relation("TimesheetSignoffRequests", fields: [requestedById], references: [id])
+
+  @@index([token])
+  @@index([status])
+}
+
+// ─── Feature 3: Chapters + Slide-based Lessons ───────────────────────────────
+
+model Chapter {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  order       Int
+  courseId    String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  course      Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons     Lesson[]
+  quiz        ChapterQuiz?
+
+  @@index([courseId, order])
+}
+
+model ChapterQuiz {
+  id        String               @id @default(cuid())
+  chapterId String               @unique
+  chapter   Chapter              @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  questions ChapterQuestion[]
+  attempts  ChapterQuizAttempt[]
+}
+
+model ChapterQuestion {
+  id            String      @id @default(cuid())
+  quizId        String
+  question      String
+  options       String[]
+  correctAnswer Int
+  explanation   String?
+  order         Int         @default(0)
+  quiz          ChapterQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId])
+}
+
+model ChapterQuizAttempt {
+  id          String      @id @default(cuid())
+  userId      String
+  quizId      String
+  chapterId   String
+  score       Float
+  passed      Boolean
+  answers     Int[]
+  attemptedAt DateTime    @default(now())
+  user        User        @relation("ChapterQuizAttempts", fields: [userId], references: [id], onDelete: Cascade)
+  quiz        ChapterQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([userId, quizId])
+  @@index([chapterId])
+}
