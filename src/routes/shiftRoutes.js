@@ -8,6 +8,7 @@ router.use(authenticate);
 
 router.get('/my', ctrl.getMyShifts);
 router.get('/available', ctrl.getAvailableShifts);
+router.get('/timesheet', authorize('ADMIN'), ctrl.getTimesheetByFacility);
 router.get('/', ctrl.getShifts);
 router.get('/:id', ctrl.getShift);
 router.post('/', authorize('ADMIN'), ctrl.createShift);

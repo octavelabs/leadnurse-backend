@@ -44,7 +44,8 @@ function coerceShiftDates(body) {
   if (data.date) data.date = new Date(data.date);
   if (data.startTime) data.startTime = new Date(data.startTime);
   if (data.endTime) data.endTime = new Date(data.endTime);
-  if (data.hourlyRate) data.hourlyRate = parseFloat(data.hourlyRate);
+  if (data.hourlyRate !== undefined) data.hourlyRate = parseFloat(data.hourlyRate);
+  if (data.facilityHourlyRate !== undefined) data.facilityHourlyRate = parseFloat(data.facilityHourlyRate);
   if (data.requiredWorkers) data.requiredWorkers = parseInt(data.requiredWorkers);
   return data;
 }
@@ -195,6 +196,66 @@ exports.getAvailableShifts = async (req, res, next) => {
     }));
 
     success(res, result);
+  } catch (err) { next(err); }
+};
+
+exports.getTimesheetByFacility = async (req, res, next) => {
+  try {
+    const { facilityId, from, to } = req.query;
+    if (!facilityId) return error(res, 'facilityId is required', 400);
+
+    const where = { facilityId };
+    if (from || to) where.date = {};
+    if (from) where.date.gte = new Date(from);
+    if (to) where.date.lte = new Date(to);
+
+    const facility = await prisma.facility.findUnique({ where: { id: facilityId } });
+    if (!facility) return error(res, 'Facility not found', 404);
+
+    const shifts = await prisma.shift.findMany({
+      where,
+      include: {
+        role: true,
+        attendance: {
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+            signoff: { select: { id: true, supervisorName: true, signedAt: true, status: true } },
+          },
+        },
+        assignments: {
+          where: { status: 'CONFIRMED' },
+          include: { user: { select: { id: true, name: true, email: true } } },
+        },
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    let totalHours = 0;
+    let totalFacilityAmount = 0;
+    let totalEmployeeAmount = 0;
+
+    const enrichedShifts = shifts.map((shift) => {
+      const rows = shift.attendance.map((att) => {
+        const hours = att.hoursWorked ?? 0;
+        const facilityAmount = hours * shift.facilityHourlyRate;
+        const employeeAmount = hours * shift.hourlyRate;
+        return { ...att, hours, facilityAmount, employeeAmount };
+      });
+      const shiftHours = rows.reduce((s, r) => s + r.hours, 0);
+      const shiftFacilityAmount = rows.reduce((s, r) => s + r.facilityAmount, 0);
+      const shiftEmployeeAmount = rows.reduce((s, r) => s + r.employeeAmount, 0);
+      totalHours += shiftHours;
+      totalFacilityAmount += shiftFacilityAmount;
+      totalEmployeeAmount += shiftEmployeeAmount;
+      return { ...shift, attendance: rows, shiftHours, shiftFacilityAmount, shiftEmployeeAmount };
+    });
+
+    return success(res, {
+      facility,
+      shifts: enrichedShifts,
+      summary: { totalHours, totalFacilityAmount, totalEmployeeAmount, shiftCount: shifts.length },
+      period: { from, to },
+    });
   } catch (err) { next(err); }
 };
 

@@ -25,6 +25,7 @@ const referenceRoutes = require('./routes/referenceRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const timesheetSignoffRoutes = require('./routes/timesheetSignoffRoutes');
 const chapterRoutes = require('./routes/chapterRoutes');
+const slideRoutes = require('./routes/slideRoutes');
 const errorHandler = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
 
@@ -79,6 +80,7 @@ app.use('/api/references', referenceRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/timesheet-signoff', timesheetSignoffRoutes);
 app.use('/api/chapters', chapterRoutes);
+app.use('/api/slides', slideRoutes);
 
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
 app.use(errorHandler);

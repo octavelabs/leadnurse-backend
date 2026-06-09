@@ -10,8 +10,8 @@ router.use(authenticate);
 router.get('/:chapterId/quiz', ctrl.getChapterQuizForStudent);
 router.post('/:chapterId/quiz/submit', ctrl.submitChapterQuiz);
 
-// Admin routes
-router.get('/course/:courseId', authorize('ADMIN'), ctrl.getChaptersByCourse);
+// Shared: employees (enrolled) + admins
+router.get('/course/:courseId', ctrl.getChaptersByCourse);
 router.post('/', authorize('ADMIN'), ctrl.createChapter);
 router.put('/:id', authorize('ADMIN'), ctrl.updateChapter);
 router.delete('/:id', authorize('ADMIN'), ctrl.deleteChapter);

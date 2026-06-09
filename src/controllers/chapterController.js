@@ -7,10 +7,20 @@ const prisma = new PrismaClient();
 
 exports.getChaptersByCourse = async (req, res, next) => {
   try {
+    const { courseId } = req.params;
+
+    if (req.user.role === 'EMPLOYEE') {
+      const course = await prisma.course.findUnique({ where: { id: courseId } });
+      if (!course || !course.isPublished) return error(res, 'Course not found', 404);
+    }
+
     const chapters = await prisma.chapter.findMany({
-      where: { courseId: req.params.courseId },
+      where: { courseId },
       include: {
-        lessons: { orderBy: { order: 'asc' } },
+        lessons: {
+          orderBy: { order: 'asc' },
+          include: { slides: { orderBy: { order: 'asc' } } },
+        },
         quiz: { include: { questions: { orderBy: { order: 'asc' } } } },
       },
       orderBy: { order: 'asc' },

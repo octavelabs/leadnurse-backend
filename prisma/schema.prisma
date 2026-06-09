@@ -209,6 +209,7 @@ model Lesson {
   updatedAt       DateTime  @updatedAt
   course          Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
   chapter         Chapter?  @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  slides          Slide[]
   progress        Progress[]
 
   @@index([courseId, order])
@@ -344,6 +345,7 @@ model Shift {
   endTime                  DateTime
   shiftType                ShiftType        @default(DAY)
   hourlyRate               Float
+  facilityHourlyRate       Float            @default(0)
   requiredWorkers          Int              @default(1)
   status                   ShiftStatus      @default(OPEN)
   notes                    String?          @db.Text
@@ -658,4 +660,23 @@ model ChapterQuizAttempt {
 
   @@index([userId, quizId])
   @@index([chapterId])
+}
+
+// ─── Slides (belong to a Lesson) ─────────────────────────────────────────────
+
+model Slide {
+  id              String    @id @default(cuid())
+  lessonId        String
+  title           String
+  content         String    @db.Text
+  slideType       SlideType @default(CONTENT)
+  backgroundTheme String    @default("white")
+  imageUrl        String?
+  bulletPoints    String[]
+  order           Int
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lesson          Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId, order])
 }

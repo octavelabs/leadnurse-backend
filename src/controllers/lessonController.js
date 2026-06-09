@@ -27,7 +27,13 @@ const getLessonById = async (req, res, next) => {
       where: { id },
       include: {
         course: { select: { id: true, title: true, isPublished: true } },
-        chapter: { include: { lessons: { orderBy: { order: 'asc' }, select: { id: true, order: true, title: true } }, quiz: { select: { id: true } } } },
+        chapter: {
+          include: {
+            lessons: { orderBy: { order: 'asc' }, select: { id: true, order: true, title: true } },
+            quiz: { select: { id: true } },
+          },
+        },
+        slides: { orderBy: { order: 'asc' } },
       },
     });
 
@@ -57,6 +63,24 @@ const getLessonById = async (req, res, next) => {
           quizPassed = !!attempt;
         }
 
+        // Find first lesson of next chapter (for post-chapter navigation)
+        let nextChapterFirstLessonId = null;
+        if (isLastInChapter) {
+          const allChapters = await prisma.chapter.findMany({
+            where: { courseId: lesson.courseId },
+            orderBy: { order: 'asc' },
+            select: {
+              id: true,
+              order: true,
+              lessons: { orderBy: { order: 'asc' }, select: { id: true }, take: 1 },
+            },
+          });
+          const currentChapterIndex = allChapters.findIndex((c) => c.id === lesson.chapterId);
+          if (currentChapterIndex >= 0 && currentChapterIndex < allChapters.length - 1) {
+            nextChapterFirstLessonId = allChapters[currentChapterIndex + 1].lessons[0]?.id || null;
+          }
+        }
+
         return success(res, {
           ...lesson,
           progress,
@@ -68,6 +92,7 @@ const getLessonById = async (req, res, next) => {
             isLastInChapter,
             hasChapterQuiz: !!lesson.chapter.quiz,
             chapterQuizPassed: quizPassed,
+            nextChapterFirstLessonId,
           },
         });
       }
