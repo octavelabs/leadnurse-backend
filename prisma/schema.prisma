@@ -178,6 +178,7 @@ model User {
   documentSignatures      DocumentSignature[]        @relation("DocumentSignatures")
   timesheetSignoffRequests TimesheetSignoff[]        @relation("TimesheetSignoffRequests")
   chapterQuizAttempts     ChapterQuizAttempt[]       @relation("ChapterQuizAttempts")
+  uploadedCertificates    UploadedCertificate[]
 }
 
 model Course {
@@ -535,20 +536,41 @@ model Reference {
 }
 
 model ReferenceResponse {
-  id                   String    @id @default(cuid())
-  referenceId          String    @unique
-  jobTitleDuringTenure String?
-  reliability          Int
-  timekeeping          Int
-  teamwork             Int
-  communication        Int
-  overallPerformance   Int
-  wouldRehire          Boolean
-  reasonForLeaving     String?   @db.Text
-  additionalComments   String?   @db.Text
-  declarationSigned    Boolean   @default(false)
-  submittedAt          DateTime  @default(now())
-  reference            Reference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+  id                      String    @id @default(cuid())
+  referenceId             String    @unique
+  // Referee contact info (self-reported on form)
+  refereeAddress          String?
+  refereeTelephone        String?
+  refereeEmailOnForm      String?
+  refereeDate             String?
+  // Relationship questions
+  howTheyKnow             String?
+  howTheyKnowOther        String?
+  durationKnown           String?
+  capacityKnown           String?
+  // Character assessment (JSON: { criteriaKey: { rating, comment } })
+  characterRatings        Json?
+  // Safeguarding
+  disciplinaryAction      Boolean?
+  disciplinaryDetails     String?   @db.Text
+  misconductInvestigation Boolean?
+  misconductDetails       String?   @db.Text
+  unsuitableForVulnerable Boolean?
+  unsuitableDetails       String?   @db.Text
+  // Narrative
+  additionalComments      String?   @db.Text
+  // Recommendation
+  recommendation          String?
+  recommendationComments  String?   @db.Text
+  // Declaration
+  declarationName         String?
+  declarationPosition     String?
+  declarationOrganisation String?
+  declarationSignature    String?
+  declarationDate         String?
+  declarationSigned       Boolean   @default(false)
+  submittedAt             DateTime  @default(now())
+  reference               Reference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
 }
 
 // ─── Feature 1: Signable Documents ───────────────────────────────────────────
@@ -660,6 +682,51 @@ model ChapterQuizAttempt {
 
   @@index([userId, quizId])
   @@index([chapterId])
+}
+
+// ─── Feature 4: Uploaded Certificates ───────────────────────────────────────
+
+enum UploadedCertType {
+  CARE_CERT_COMBINED
+  CARE_CERT_STD_1
+  CARE_CERT_STD_2
+  CARE_CERT_STD_3
+  CARE_CERT_STD_4
+  CARE_CERT_STD_5
+  CARE_CERT_STD_6
+  CARE_CERT_STD_7
+  CARE_CERT_STD_8
+  CARE_CERT_STD_9
+  CARE_CERT_STD_10
+  CARE_CERT_STD_11
+  CARE_CERT_STD_12
+  CARE_CERT_STD_13
+  CARE_CERT_STD_14
+  CARE_CERT_STD_15
+  AUTISM_AWARENESS_LD
+  FIRST_AID_CERT
+  MCA_DOLS
+  FOOD_HYGIENE
+  FIRE_SAFETY
+  MOVING_HANDLING
+}
+
+model UploadedCertificate {
+  id         String           @id @default(cuid())
+  userId     String
+  certType   UploadedCertType
+  label      String
+  fileUrl    String
+  fileName   String?
+  issueDate  DateTime?        @db.Date
+  expiryDate DateTime?        @db.Date
+  notes      String?
+  uploadedAt DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([certType])
 }
 
 // ─── Slides (belong to a Lesson) ─────────────────────────────────────────────
