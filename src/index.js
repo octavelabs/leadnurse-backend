@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 
 const authRoutes = require('./routes/auth');
 const courseRoutes = require('./routes/courses');
@@ -32,6 +33,7 @@ const logger = require('./utils/logger');
 
 const app = express();
 
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(
   cors({
@@ -52,6 +54,7 @@ const authLimiter = rateLimit({
   message: { success: false, message: 'Too many login attempts, please try again later.' },
 });
 
+app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));

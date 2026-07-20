@@ -5,6 +5,94 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = process.env.RESEND_FROM_EMAIL || 'Lead Nurse <onboarding@resend.dev>';
 const COMPLIANCE_EMAIL = 'compliance@leadnurse.co.uk';
 
+// ─── Email verification ───────────────────────────────────────────────────────
+
+exports.sendEmailVerificationEmail = async ({ name, email, verifyUrl }) => {
+  const html = `
+<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f7;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:32px 16px">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:600px;width:100%">
+        <tr><td style="background:#3f3e59;padding:28px 40px;text-align:center">
+          <img src="https://leadnurse.co.uk/wp-content/uploads/2026/02/Lead-Nurse-Logo-e1771949504571-1024x377.png" alt="Lead Nurse" height="36" style="display:block;margin:0 auto"/>
+        </td></tr>
+        <tr><td style="padding:40px">
+          <p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7">Hi ${name},</p>
+          <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7">
+            Welcome to Lead Nurse! Please verify your email address to activate your account.
+          </p>
+          <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px">
+            <tr><td style="background:#3f3e59;border-radius:8px;text-align:center">
+              <a href="${verifyUrl}" style="display:inline-block;padding:14px 32px;color:#fff;font-size:15px;font-weight:bold;text-decoration:none;border-radius:8px">
+                Verify Email Address &rarr;
+              </a>
+            </td></tr>
+          </table>
+          <p style="margin:0 0 12px;font-size:13px;color:#6b7280;line-height:1.6">
+            This link expires in 24 hours. If you did not create an account, you can safely ignore this email.
+          </p>
+        </td></tr>
+        <tr><td style="background:#f9fafb;padding:20px 40px;border-top:1px solid #e5e7eb">
+          <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center">Lead Nurse Limited &bull; admin@leadnurse.co.uk</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+  return resend.emails.send({
+    from: FROM,
+    to: email,
+    subject: 'Verify your Lead Nurse email address',
+    html,
+  });
+};
+
+// ─── Password reset ───────────────────────────────────────────────────────────
+
+exports.sendPasswordResetEmail = async ({ name, email, resetUrl }) => {
+  const html = `
+<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f7;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:32px 16px">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:600px;width:100%">
+        <tr><td style="background:#3f3e59;padding:28px 40px;text-align:center">
+          <img src="https://leadnurse.co.uk/wp-content/uploads/2026/02/Lead-Nurse-Logo-e1771949504571-1024x377.png" alt="Lead Nurse" height="36" style="display:block;margin:0 auto"/>
+        </td></tr>
+        <tr><td style="padding:40px">
+          <p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7">Hi ${name},</p>
+          <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7">
+            We received a request to reset your Lead Nurse password. Click the button below to set a new password.
+          </p>
+          <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px">
+            <tr><td style="background:#3f3e59;border-radius:8px;text-align:center">
+              <a href="${resetUrl}" style="display:inline-block;padding:14px 32px;color:#fff;font-size:15px;font-weight:bold;text-decoration:none;border-radius:8px">
+                Reset Password &rarr;
+              </a>
+            </td></tr>
+          </table>
+          <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6">
+            This link expires in 1 hour. If you did not request a password reset, please ignore this email — your password will remain unchanged.
+          </p>
+        </td></tr>
+        <tr><td style="background:#f9fafb;padding:20px 40px;border-top:1px solid #e5e7eb">
+          <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center">Lead Nurse Limited &bull; admin@leadnurse.co.uk</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+  return resend.emails.send({
+    from: FROM,
+    to: email,
+    subject: 'Reset your Lead Nurse password',
+    html,
+  });
+};
+
 // ─── Reference request email (sent to referee) ────────────────────────────────
 
 exports.sendReferenceRequestEmail = async ({ refereeName, refereeEmail, workerName, formUrl, pdfUrl }) => {

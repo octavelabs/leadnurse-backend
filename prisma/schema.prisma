@@ -149,6 +149,13 @@ model User {
   email        String              @unique
   password     String
   role         Role                @default(EMPLOYEE)
+  isActive                 Boolean   @default(true)
+  tokenVersion             Int       @default(0)
+  emailVerified            Boolean   @default(true)
+  emailVerificationToken   String?   @unique
+  emailVerificationExpires DateTime?
+  resetPasswordToken       String?   @unique
+  resetPasswordExpires     DateTime?
   phone        String?
   address      String?
   city         String?
