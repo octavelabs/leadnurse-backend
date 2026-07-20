@@ -44,4 +44,25 @@ const documentUpload = multer({
   },
 });
 
-module.exports = { avatarUpload, documentUpload };
+const certificateStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'leadnurse/certificates',
+    resource_type: 'auto',
+    public_id: (req) => `cert_${req.user.id}_${Date.now()}`,
+  },
+});
+
+const certificateUpload = multer({
+  storage: certificateStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error('Only images and PDF files are allowed for certificates'));
+    }
+    cb(null, true);
+  },
+});
+
+module.exports = { avatarUpload, documentUpload, certificateUpload };

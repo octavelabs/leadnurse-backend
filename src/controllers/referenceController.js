@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
 const { success, error } = require('../utils/apiResponse');
 const { createAuditLog } = require('../services/auditService');
+const { sendReferenceRequestEmail, sendReferenceCompletedEmail } = require('../services/emailService');
 
 const prisma = new PrismaClient();
 
@@ -97,11 +98,14 @@ exports.getReferenceSummary = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// ─── Admin: Send reference request (generate token) ──────────────────────────
+// ─── Admin: Send reference request (generate token + send email) ──────────────
 
 exports.sendReferenceRequest = async (req, res, next) => {
   try {
-    const ref = await prisma.reference.findUnique({ where: { id: req.params.id } });
+    const ref = await prisma.reference.findUnique({
+      where: { id: req.params.id },
+      include: { worker: { select: { name: true } } },
+    });
     if (!ref) return error(res, 'Reference not found', 404);
     if (ref.status === 'COMPLETED') return error(res, 'This reference has already been completed', 400);
 
@@ -114,11 +118,20 @@ exports.sendReferenceRequest = async (req, res, next) => {
       include: REFERENCE_INCLUDE,
     });
 
-    // TODO: send email to ref.refereeEmail with link:
-    // `${process.env.FRONTEND_URL}/references/${token}`
+    const formUrl = `${process.env.FRONTEND_URL}/references/${token}`;
+    const pdfUrl = process.env.REFERENCE_FORM_PDF_URL || null;
+
+    // Send email — fire-and-forget (don't block the API response)
+    sendReferenceRequestEmail({
+      refereeName: ref.refereeName,
+      refereeEmail: ref.refereeEmail,
+      workerName: ref.worker.name,
+      formUrl,
+      pdfUrl,
+    }).catch((err) => console.error('[Resend] Failed to send reference email:', err?.message));
 
     await createAuditLog({ userId: req.user.id, action: 'UPDATE', entity: 'Reference', entityId: ref.id, details: { action: 'send_request' } });
-    return success(res, updated, 'Reference request sent');
+    return success(res, updated, 'Reference request sent and email dispatched');
   } catch (err) { next(err); }
 };
 
@@ -141,7 +154,6 @@ exports.deleteReference = async (req, res, next) => {
   try {
     const ref = await prisma.reference.findUnique({ where: { id: req.params.id } });
     if (!ref) return error(res, 'Reference not found', 404);
-
     await prisma.reference.delete({ where: { id: req.params.id } });
     await createAuditLog({ userId: req.user.id, action: 'DELETE', entity: 'Reference', entityId: req.params.id });
     return success(res, null, 'Reference removed');
@@ -167,12 +179,15 @@ exports.getPublicReferenceForm = async (req, res, next) => {
     }
 
     return success(res, {
-      refereeName: reference.refereeName,
-      workerFirstName: reference.worker.name.split(' ')[0],
-      relationship: reference.relationship,
-      refereeOrganisation: reference.refereeOrganisation,
-      employmentStart: reference.employmentStart,
-      employmentEnd: reference.employmentEnd,
+      refereeName:          reference.refereeName,
+      refereeEmail:         reference.refereeEmail,
+      refereeJobTitle:      reference.refereeJobTitle,
+      refereeOrganisation:  reference.refereeOrganisation,
+      workerName:           reference.worker.name,
+      workerFirstName:      reference.worker.name.split(' ')[0],
+      relationship:         reference.relationship,
+      employmentStart:      reference.employmentStart,
+      employmentEnd:        reference.employmentEnd,
     });
   } catch (err) { next(err); }
 };
@@ -181,7 +196,10 @@ exports.getPublicReferenceForm = async (req, res, next) => {
 
 exports.submitReferenceForm = async (req, res, next) => {
   try {
-    const reference = await prisma.reference.findUnique({ where: { token: req.params.token } });
+    const reference = await prisma.reference.findUnique({
+      where: { token: req.params.token },
+      include: { worker: { select: { name: true } } },
+    });
 
     if (!reference) return error(res, 'Invalid reference link', 404);
     if (reference.status === 'COMPLETED') return error(res, 'This reference has already been submitted', 410);
@@ -190,33 +208,51 @@ exports.submitReferenceForm = async (req, res, next) => {
     }
 
     const {
-      jobTitleDuringTenure, reliability, timekeeping, teamwork,
-      communication, overallPerformance, wouldRehire,
-      reasonForLeaving, additionalComments, declarationSigned,
+      refereeAddress, refereeTelephone, refereeEmailOnForm, refereeDate,
+      howTheyKnow, howTheyKnowOther, durationKnown, capacityKnown,
+      characterRatings,
+      disciplinaryAction, disciplinaryDetails,
+      misconductInvestigation, misconductDetails,
+      unsuitableForVulnerable, unsuitableDetails,
+      additionalComments,
+      recommendation, recommendationComments,
+      declarationName, declarationPosition, declarationOrganisation,
+      declarationSignature, declarationDate, declarationSigned,
     } = req.body;
 
     if (!declarationSigned) return error(res, 'You must sign the declaration to submit', 400);
-
-    const ratings = { reliability, timekeeping, teamwork, communication, overallPerformance };
-    for (const [key, val] of Object.entries(ratings)) {
-      const n = parseInt(val);
-      if (isNaN(n) || n < 1 || n > 5) return error(res, `${key} must be a rating between 1 and 5`, 400);
-    }
+    if (!declarationName?.trim()) return error(res, 'Declaration name is required', 400);
+    if (!declarationSignature?.trim()) return error(res, 'Signature is required', 400);
+    if (!recommendation) return error(res, 'Overall recommendation is required', 400);
 
     await prisma.$transaction([
       prisma.referenceResponse.create({
         data: {
-          referenceId: reference.id,
-          jobTitleDuringTenure: jobTitleDuringTenure?.trim() || null,
-          reliability: parseInt(reliability),
-          timekeeping: parseInt(timekeeping),
-          teamwork: parseInt(teamwork),
-          communication: parseInt(communication),
-          overallPerformance: parseInt(overallPerformance),
-          wouldRehire: Boolean(wouldRehire),
-          reasonForLeaving: reasonForLeaving?.trim() || null,
-          additionalComments: additionalComments?.trim() || null,
-          declarationSigned: true,
+          referenceId:            reference.id,
+          refereeAddress:         refereeAddress?.trim() || null,
+          refereeTelephone:       refereeTelephone?.trim() || null,
+          refereeEmailOnForm:     refereeEmailOnForm?.trim() || null,
+          refereeDate:            refereeDate || null,
+          howTheyKnow:            howTheyKnow || null,
+          howTheyKnowOther:       howTheyKnowOther?.trim() || null,
+          durationKnown:          durationKnown?.trim() || null,
+          capacityKnown:          capacityKnown?.trim() || null,
+          characterRatings:       characterRatings || null,
+          disciplinaryAction:     disciplinaryAction != null ? Boolean(disciplinaryAction) : null,
+          disciplinaryDetails:    disciplinaryDetails?.trim() || null,
+          misconductInvestigation: misconductInvestigation != null ? Boolean(misconductInvestigation) : null,
+          misconductDetails:      misconductDetails?.trim() || null,
+          unsuitableForVulnerable: unsuitableForVulnerable != null ? Boolean(unsuitableForVulnerable) : null,
+          unsuitableDetails:      unsuitableDetails?.trim() || null,
+          additionalComments:     additionalComments?.trim() || null,
+          recommendation,
+          recommendationComments: recommendationComments?.trim() || null,
+          declarationName:        declarationName.trim(),
+          declarationPosition:    declarationPosition?.trim() || null,
+          declarationOrganisation: declarationOrganisation?.trim() || null,
+          declarationSignature:   declarationSignature.trim(),
+          declarationDate:        declarationDate || null,
+          declarationSigned:      true,
         },
       }),
       prisma.reference.update({
@@ -224,6 +260,14 @@ exports.submitReferenceForm = async (req, res, next) => {
         data: { status: 'COMPLETED', completedAt: new Date(), token: null },
       }),
     ]);
+
+    // Notify compliance team — fire-and-forget
+    const adminViewUrl = `${process.env.FRONTEND_URL}/admin/workforce/references`;
+    sendReferenceCompletedEmail({
+      refereeName: reference.refereeName,
+      workerName:  reference.worker.name,
+      adminViewUrl,
+    }).catch((err) => console.error('[Resend] Failed to send completion notification:', err?.message));
 
     return success(res, null, 'Reference submitted successfully. Thank you.');
   } catch (err) { next(err); }

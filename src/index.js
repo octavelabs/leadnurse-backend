@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 
 const authRoutes = require('./routes/auth');
 const courseRoutes = require('./routes/courses');
@@ -26,11 +27,13 @@ const documentRoutes = require('./routes/documentRoutes');
 const timesheetSignoffRoutes = require('./routes/timesheetSignoffRoutes');
 const chapterRoutes = require('./routes/chapterRoutes');
 const slideRoutes = require('./routes/slideRoutes');
+const uploadedCertificateRoutes = require('./routes/uploadedCertificateRoutes');
 const errorHandler = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
 
 const app = express();
 
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(
   cors({
@@ -51,6 +54,7 @@ const authLimiter = rateLimit({
   message: { success: false, message: 'Too many login attempts, please try again later.' },
 });
 
+app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));
@@ -81,6 +85,7 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/timesheet-signoff', timesheetSignoffRoutes);
 app.use('/api/chapters', chapterRoutes);
 app.use('/api/slides', slideRoutes);
+app.use('/api/uploaded-certificates', uploadedCertificateRoutes);
 
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
 app.use(errorHandler);
