@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const ctrl = require('../controllers/uploadedCertificateController');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
+const { authorize } = require('../middleware/authorize');
 const { certificateUpload } = require('../middleware/upload');
 
 router.use(authenticate);
