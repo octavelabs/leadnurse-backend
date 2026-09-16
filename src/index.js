@@ -64,6 +64,24 @@ app.get('/health', (req, res) =>
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 );
 
+// TEMP DEBUG — remove after diagnosing production login issue
+app.get('/api/_debug', async (req, res) => {
+  const { PrismaClient } = require('@prisma/client');
+  const prisma = new PrismaClient();
+  try {
+    const dbHost = new URL(process.env.DATABASE_URL).host;
+    const admin = await prisma.user.findUnique({
+      where: { email: 'admin@leadnurse.co.uk' },
+      select: { id: true, isActive: true, emailVerified: true, updatedAt: true, tokenVersion: true },
+    });
+    res.json({ dbHost, admin });
+  } catch (e) {
+    res.json({ error: e.message });
+  } finally {
+    await prisma.$disconnect();
+  }
+});
+
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/lessons', lessonRoutes);
