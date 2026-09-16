@@ -24,19 +24,23 @@ const generateToken = (user, rememberMe = false) =>
     { expiresIn: rememberMe ? '30d' : (process.env.JWT_EXPIRES_IN || '7d') }
   );
 
+// Frontend (Vercel) and backend (Render) are on different sites, so the auth
+// cookie must be SameSite=None to be sent on cross-site API calls in production.
+const isProd = process.env.NODE_ENV === 'production';
+
 const setCookie = (res, token, rememberMe = false) =>
   res.cookie(COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
     ...(rememberMe ? { maxAge: 30 * 24 * 60 * 60 * 1000 } : {}),
   });
 
 const clearCookie = (res) =>
   res.clearCookie(COOKIE, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
   });
 
 // Hash verification/reset tokens before storing — protects against DB leaks
