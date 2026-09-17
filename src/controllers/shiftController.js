@@ -3,6 +3,12 @@ const { success, error } = require('../utils/apiResponse');
 const { createAuditLog } = require('../services/auditService');
 const { createNotification } = require('../services/notificationService');
 const { checkWorkerCompliance } = require('../services/complianceService');
+const {
+  sendShiftConfirmedEmail,
+  sendShiftCancelledEmail,
+  sendApplicationDeclinedEmail,
+  sendNewApplicationEmail,
+} = require('../services/emailService');
 
 const prisma = new PrismaClient();
 
@@ -77,7 +83,7 @@ exports.deleteShift = async (req, res, next) => {
 exports.assignWorker = async (req, res, next) => {
   try {
     const { shiftId, userId } = req.body;
-    const shift = await prisma.shift.findUnique({ where: { id: shiftId } });
+    const shift = await prisma.shift.findUnique({ where: { id: shiftId }, include: { facility: true } });
     if (!shift) return error(res, 'Shift not found', 404);
 
     const { valid, issues } = await checkWorkerCompliance(userId, shift);
@@ -86,13 +92,20 @@ exports.assignWorker = async (req, res, next) => {
     const existingCount = await prisma.shiftAssignment.count({ where: { shiftId, status: { in: ['CONFIRMED', 'PENDING'] } } });
     if (existingCount >= shift.requiredWorkers) return error(res, 'Shift is already fully staffed', 409);
 
-    const assignment = await prisma.shiftAssignment.create({ data: { shiftId, userId, status: 'CONFIRMED' } });
+    const assignment = await prisma.shiftAssignment.create({
+      data: { shiftId, userId, status: 'CONFIRMED' },
+      include: { user: { select: { name: true, email: true } } },
+    });
 
     const filled = existingCount + 1 >= shift.requiredWorkers;
     if (filled) await prisma.shift.update({ where: { id: shiftId }, data: { status: 'FILLED' } });
     else await prisma.shift.update({ where: { id: shiftId }, data: { status: 'PARTIALLY_FILLED' } });
 
     await createNotification({ userId, type: 'SHIFT_ASSIGNED', title: 'Shift Assigned', message: `You have been assigned to shift: ${shift.title}`, data: { shiftId } });
+    sendShiftConfirmedEmail({
+      name: assignment.user.name, email: assignment.user.email, shiftTitle: shift.title,
+      facilityName: shift.facility?.name, date: shift.date, startTime: shift.startTime, endTime: shift.endTime,
+    }).catch((err) => console.error('[Resend] Failed to send shift confirmed email:', err?.message));
     await createAuditLog({ userId: req.user.id, action: 'ASSIGN', entity: 'ShiftAssignment', entityId: assignment.id, details: { shiftId, workerId: userId } });
     success(res, assignment, 'Worker assigned', 201);
   } catch (err) { next(err); }
@@ -100,7 +113,10 @@ exports.assignWorker = async (req, res, next) => {
 
 exports.unassignWorker = async (req, res, next) => {
   try {
-    const assignment = await prisma.shiftAssignment.findUnique({ where: { id: req.params.id }, include: { shift: true } });
+    const assignment = await prisma.shiftAssignment.findUnique({
+      where: { id: req.params.id },
+      include: { shift: true, user: { select: { name: true, email: true } } },
+    });
     if (!assignment) return error(res, 'Assignment not found', 404);
 
     await prisma.shiftAssignment.update({ where: { id: req.params.id }, data: { status: 'CANCELLED' } });
@@ -110,6 +126,9 @@ exports.unassignWorker = async (req, res, next) => {
     await prisma.shift.update({ where: { id: assignment.shiftId }, data: { status: newStatus } });
 
     await createNotification({ userId: assignment.userId, type: 'SHIFT_CANCELLED', title: 'Shift Unassigned', message: `Your assignment to ${assignment.shift.title} has been cancelled`, data: { shiftId: assignment.shiftId } });
+    sendShiftCancelledEmail({
+      name: assignment.user.name, email: assignment.user.email, shiftTitle: assignment.shift.title, date: assignment.shift.date,
+    }).catch((err) => console.error('[Resend] Failed to send shift cancelled email:', err?.message));
     await createAuditLog({ userId: req.user.id, action: 'UNASSIGN', entity: 'ShiftAssignment', entityId: req.params.id });
     success(res, null, 'Worker unassigned');
   } catch (err) { next(err); }
@@ -140,6 +159,10 @@ exports.applyForShift = async (req, res, next) => {
     for (const admin of admins) {
       await createNotification({ userId: admin.id, type: 'SHIFT_ASSIGNED', title: 'New Shift Application', message: `${req.user.name} has applied for: ${shift.title}`, data: { shiftId, assignmentId: assignment.id } });
     }
+    sendNewApplicationEmail({
+      applicantName: req.user.name, shiftTitle: shift.title, date: shift.date,
+      reviewUrl: `${process.env.FRONTEND_URL}/admin/workforce/applications`,
+    }).catch((err) => console.error('[Resend] Failed to send new application email:', err?.message));
 
     await createAuditLog({ userId, action: 'ASSIGN', entity: 'ShiftAssignment', entityId: assignment.id, details: { shiftId, type: 'self-apply' } });
     success(res, assignment, 'Application submitted — awaiting confirmation', 201);
@@ -149,7 +172,10 @@ exports.applyForShift = async (req, res, next) => {
 exports.confirmApplication = async (req, res, next) => {
   try {
     const { action } = req.body; // 'confirm' | 'decline'
-    const assignment = await prisma.shiftAssignment.findUnique({ where: { id: req.params.id }, include: { shift: true } });
+    const assignment = await prisma.shiftAssignment.findUnique({
+      where: { id: req.params.id },
+      include: { shift: { include: { facility: true } }, user: { select: { name: true, email: true } } },
+    });
     if (!assignment) return error(res, 'Assignment not found', 404);
     if (assignment.status !== 'PENDING') return error(res, 'Assignment is not pending', 409);
 
@@ -161,8 +187,15 @@ exports.confirmApplication = async (req, res, next) => {
       const newShiftStatus = confirmedCount >= assignment.shift.requiredWorkers ? 'FILLED' : 'PARTIALLY_FILLED';
       await prisma.shift.update({ where: { id: assignment.shiftId }, data: { status: newShiftStatus } });
       await createNotification({ userId: assignment.userId, type: 'SHIFT_ASSIGNED', title: 'Application Confirmed', message: `Your application for "${assignment.shift.title}" has been confirmed.`, data: { shiftId: assignment.shiftId } });
+      sendShiftConfirmedEmail({
+        name: assignment.user.name, email: assignment.user.email, shiftTitle: assignment.shift.title,
+        facilityName: assignment.shift.facility?.name, date: assignment.shift.date, startTime: assignment.shift.startTime, endTime: assignment.shift.endTime,
+      }).catch((err) => console.error('[Resend] Failed to send shift confirmed email:', err?.message));
     } else {
       await createNotification({ userId: assignment.userId, type: 'SHIFT_CANCELLED', title: 'Application Declined', message: `Your application for "${assignment.shift.title}" was not successful.`, data: { shiftId: assignment.shiftId } });
+      sendApplicationDeclinedEmail({
+        name: assignment.user.name, email: assignment.user.email, shiftTitle: assignment.shift.title, date: assignment.shift.date,
+      }).catch((err) => console.error('[Resend] Failed to send application declined email:', err?.message));
     }
 
     await createAuditLog({ userId: req.user.id, action: action === 'confirm' ? 'APPROVE' : 'REJECT', entity: 'ShiftAssignment', entityId: req.params.id });

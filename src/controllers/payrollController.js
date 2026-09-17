@@ -3,6 +3,7 @@ const { success, error } = require('../utils/apiResponse');
 const { createAuditLog } = require('../services/auditService');
 const { createNotification } = require('../services/notificationService');
 const { generatePayrollReport } = require('../services/payrollService');
+const { sendPayrollReadyEmail } = require('../services/emailService');
 
 const prisma = new PrismaClient();
 
@@ -45,12 +46,25 @@ exports.updateReportStatus = async (req, res, next) => {
     if (status === 'APPROVED') data.approvedAt = new Date();
     if (status === 'PAID') data.paidAt = new Date();
 
-    const report = await prisma.payrollReport.update({ where: { id: req.params.id }, data, include: { entries: { include: { user: { select: { id: true } } } } } });
+    const report = await prisma.payrollReport.update({
+      where: { id: req.params.id },
+      data,
+      include: { entries: { include: { user: { select: { id: true, name: true, email: true } } } } },
+    });
 
     if (status === 'PAID') {
-      const userIds = [...new Set(report.entries.map((e) => e.userId))];
-      for (const uid of userIds) {
+      const byUser = new Map();
+      for (const e of report.entries) {
+        const prev = byUser.get(e.userId) || { user: e.user, totalPay: 0 };
+        prev.totalPay += e.totalPay;
+        byUser.set(e.userId, prev);
+      }
+      for (const [uid, { user, totalPay }] of byUser) {
         await createNotification({ userId: uid, type: 'PAYROLL_READY', title: 'Payroll Processed', message: 'Your payroll for the recent period has been processed.', data: { reportId: report.id } });
+        sendPayrollReadyEmail({
+          name: user.name, email: user.email, periodStart: report.periodStart, periodEnd: report.periodEnd,
+          totalPay, earningsUrl: `${process.env.FRONTEND_URL}/my-earnings`,
+        }).catch((err) => console.error('[Resend] Failed to send payroll ready email:', err?.message));
       }
     }
 

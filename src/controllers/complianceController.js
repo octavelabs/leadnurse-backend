@@ -39,7 +39,12 @@ exports.upsertCompliance = async (req, res, next) => {
     if (status !== undefined) data.status = status;
     if (documentNumber !== undefined) data.documentNumber = documentNumber || null;
     if (issueDate !== undefined) data.issueDate = issueDate ? new Date(issueDate) : null;
-    if (expiryDate !== undefined) data.expiryDate = expiryDate ? new Date(expiryDate) : null;
+    if (expiryDate !== undefined) {
+      data.expiryDate = expiryDate ? new Date(expiryDate) : null;
+      // Renewed document — clear prior expiry email flags so future expiry is notified again
+      data.expiringSoonNotifiedAt = null;
+      data.expiredNotifiedAt = null;
+    }
     if (notes !== undefined) data.notes = notes || null;
     if (verifiedAt !== undefined) data.verifiedAt = verifiedAt ? new Date(verifiedAt) : null;
 

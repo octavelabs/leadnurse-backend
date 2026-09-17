@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
 const { success, error } = require('../utils/apiResponse');
 const { createAuditLog } = require('../services/auditService');
-const { sendEmailVerificationEmail, sendPasswordResetEmail } = require('../services/emailService');
+const { sendEmailVerificationEmail, sendPasswordResetEmail, sendAccountStatusEmail } = require('../services/emailService');
 
 const prisma = new PrismaClient();
 const COOKIE = '_lntoken';
@@ -274,6 +274,8 @@ exports.toggleUserActive = async (req, res, next) => {
       userId: req.user.id, action: 'UPDATE', entity: 'User', entityId: userId,
       details: { event: updated.isActive ? 'account_reactivated' : 'account_deactivated' },
     }).catch(() => {});
+    sendAccountStatusEmail({ name: updated.name, email: updated.email, isActive: updated.isActive })
+      .catch((err) => console.error('[Resend] Failed to send account status email:', err?.message));
 
     return success(res, updated, `Account ${updated.isActive ? 'reactivated' : 'deactivated'} successfully.`);
   } catch (err) { next(err); }
