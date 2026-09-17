@@ -413,6 +413,8 @@ model Attendance {
   status         AttendanceStatus @default(ON_TIME)
   hoursWorked    Float?
   overtimeHours  Float?           @default(0)
+  checkOutSignature String?
+  confirmedBy    String?
   notes          String?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt

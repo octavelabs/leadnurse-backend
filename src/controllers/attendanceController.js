@@ -55,8 +55,16 @@ exports.checkIn = async (req, res, next) => {
 
 exports.checkOut = async (req, res, next) => {
   try {
-    const { shiftId } = req.body;
+    const { shiftId, signatureName, confirmedBy } = req.body;
     const userId = req.user.id;
+
+    const normalize = (s) => (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    if (!signatureName || normalize(signatureName) !== normalize(req.user.name)) {
+      return error(res, 'Signature must match your full name exactly', 400);
+    }
+    if (!confirmedBy || !confirmedBy.trim()) {
+      return error(res, 'Confirmed By is required', 400);
+    }
 
     const record = await prisma.attendance.findFirst({ where: { shiftId, userId } });
     if (!record) return error(res, 'No check-in record found', 404);
@@ -72,7 +80,14 @@ exports.checkOut = async (req, res, next) => {
 
     const updated = await prisma.attendance.update({
       where: { id: record.id },
-      data: { checkOutTime: now, hoursWorked: Math.round(hoursWorked * 100) / 100, overtimeHours: Math.round(overtimeHours * 100) / 100, status },
+      data: {
+        checkOutTime: now,
+        hoursWorked: Math.round(hoursWorked * 100) / 100,
+        overtimeHours: Math.round(overtimeHours * 100) / 100,
+        status,
+        checkOutSignature: signatureName.trim(),
+        confirmedBy: confirmedBy.trim(),
+      },
     });
 
     await createAuditLog({ userId, action: 'CHECKOUT', entity: 'Attendance', entityId: record.id });
